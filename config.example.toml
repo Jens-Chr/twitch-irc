@@ -1,3 +1,6 @@
+[server]
+address = ":2112"
+
 [twitch]
 username = "DEIN_BOT_NAME"
 oauth = "oauth:DEIN_TOKEN"
@@ -8,5 +11,10 @@ url = "http://localhost:5678/webhook/twitch-chat"
 timeout = "5s"
 
 [metrics]
-address = ":2112"
 path = "/metrics"
+
+[reply]
+enabled = true
+path = "/n8n/reply"
+token = "DEIN_RUECKKANAL_TOKEN"
+max_message_length = 450

@@ -12,9 +12,15 @@ import (
 )
 
 type Config struct {
-	Twitch TwitchConfig `toml:"twitch"`
-	N8N     N8NConfig    `toml:"n8n"`
+	Server  ServerConfig  `toml:"server"`
+	Twitch  TwitchConfig  `toml:"twitch"`
+	N8N     N8NConfig     `toml:"n8n"`
 	Metrics MetricsConfig `toml:"metrics"`
+	Reply   ReplyConfig   `toml:"reply"`
+}
+
+type ServerConfig struct {
+	Address string `toml:"address"`
 }
 
 type TwitchConfig struct {
@@ -29,18 +35,35 @@ type N8NConfig struct {
 }
 
 type MetricsConfig struct {
+	// Address is accepted for older config files; server.address is used.
 	Address string `toml:"address"`
 	Path    string `toml:"path"`
 }
 
+type ReplyConfig struct {
+	Enabled bool `toml:"enabled"`
+	// Address is accepted for older config files; server.address is used.
+	Address          string `toml:"address"`
+	Path             string `toml:"path"`
+	Token            string `toml:"token"`
+	MaxMessageLength int    `toml:"max_message_length"`
+}
+
 func defaultConfig() Config {
 	return Config{
+		Server: ServerConfig{
+			Address: ":2112",
+		},
 		N8N: N8NConfig{
 			Timeout: "5s",
 		},
 		Metrics: MetricsConfig{
-			Address: ":2112",
-			Path:    "/metrics",
+			Path: "/metrics",
+		},
+		Reply: ReplyConfig{
+			Enabled:          true,
+			Path:             "/n8n/reply",
+			MaxMessageLength: 450,
 		},
 	}
 }
@@ -67,6 +90,7 @@ func loadConfig(path string) (Config, error) {
 }
 
 func (c *Config) normalize() {
+	c.Server.Address = strings.TrimSpace(c.Server.Address)
 	c.Twitch.Username = strings.TrimSpace(c.Twitch.Username)
 	c.Twitch.OAuth = strings.TrimSpace(c.Twitch.OAuth)
 	c.Twitch.Channel = strings.TrimPrefix(strings.TrimSpace(c.Twitch.Channel), "#")
@@ -74,10 +98,17 @@ func (c *Config) normalize() {
 	c.N8N.Timeout = strings.TrimSpace(c.N8N.Timeout)
 	c.Metrics.Address = strings.TrimSpace(c.Metrics.Address)
 	c.Metrics.Path = strings.TrimSpace(c.Metrics.Path)
+	c.Reply.Address = strings.TrimSpace(c.Reply.Address)
+	c.Reply.Path = strings.TrimSpace(c.Reply.Path)
+	c.Reply.Token = strings.TrimSpace(c.Reply.Token)
 }
 
 func (c Config) validate() error {
 	var problems []string
+
+	if c.Server.Address == "" {
+		problems = append(problems, "server.address fehlt")
+	}
 
 	if c.Twitch.Username == "" {
 		problems = append(problems, "twitch.username fehlt")
@@ -100,13 +131,24 @@ func (c Config) validate() error {
 		problems = append(problems, fmt.Sprintf("n8n.timeout ist ungueltig: %v", err))
 	}
 
-	if c.Metrics.Address == "" {
-		problems = append(problems, "metrics.address fehlt")
-	}
 	if c.Metrics.Path == "" {
 		problems = append(problems, "metrics.path fehlt")
 	} else if !strings.HasPrefix(c.Metrics.Path, "/") {
 		problems = append(problems, "metrics.path muss mit \"/\" beginnen")
+	}
+
+	if c.Reply.Enabled {
+		if c.Reply.Path == "" {
+			problems = append(problems, "reply.path fehlt")
+		} else if !strings.HasPrefix(c.Reply.Path, "/") {
+			problems = append(problems, "reply.path muss mit \"/\" beginnen")
+		}
+		if c.Reply.MaxMessageLength <= 0 {
+			problems = append(problems, "reply.max_message_length muss groesser als 0 sein")
+		}
+		if c.Metrics.Path == c.Reply.Path {
+			problems = append(problems, "metrics.path und reply.path muessen unterschiedlich sein")
+		}
 	}
 
 	if len(problems) > 0 {

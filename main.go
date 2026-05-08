@@ -10,7 +10,6 @@ import (
 
 	twitch "github.com/gempir/go-twitch-irc/v4"
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
 var chatMessages = prometheus.NewCounter(
@@ -36,7 +35,7 @@ func main() {
 	twitchClient := twitch.NewClient(cfg.Twitch.Username, cfg.Twitch.OAuth)
 
 	prometheus.MustRegister(chatMessages)
-	startMetricsServer(cfg.Metrics)
+	startHTTPServer(cfg.Server, cfg.Metrics, cfg.Reply, twitchClient, cfg.Twitch.Channel)
 
 	twitchClient.OnPrivateMessage(func(message twitch.PrivateMessage) {
 		fmt.Printf("[%s]: %s\n", message.User.DisplayName, message.Message)
@@ -53,23 +52,12 @@ func main() {
 	}
 }
 
-func startMetricsServer(cfg MetricsConfig) {
-	mux := http.NewServeMux()
-	mux.Handle(cfg.Path, promhttp.Handler())
-
-	go func() {
-		log.Printf("Metrics laufen auf %s%s", cfg.Address, cfg.Path)
-		if err := http.ListenAndServe(cfg.Address, mux); err != nil {
-			log.Fatalf("Metrics-Server konnte nicht gestartet werden: %v", err)
-		}
-	}()
-}
-
 func sendToN8N(client *http.Client, webhookURL string, msg twitch.PrivateMessage) {
 	payload := map[string]string{
-		"user":    msg.User.DisplayName,
-		"message": msg.Message,
-		"channel": msg.Channel,
+		"user":       msg.User.DisplayName,
+		"message":    msg.Message,
+		"channel":    msg.Channel,
+		"message_id": msg.ID,
 	}
 
 	jsonData, err := json.Marshal(payload)
