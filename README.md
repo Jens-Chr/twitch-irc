@@ -12,6 +12,22 @@ go run . -config config.toml
 
 Die wichtigsten Werte stehen in `config.example.toml`. `config.toml` ist in `.gitignore` eingetragen, weil dort der Twitch-OAuth-Token liegt.
 
+## Docker
+
+Vor dem Start die lokale Konfiguration anlegen:
+
+```sh
+cp config.example.toml config.toml
+```
+
+Wenn n8n auf dem Docker-Host laeuft, in `config.toml` fuer `n8n.url` statt `localhost` den Hostnamen `host.docker.internal` verwenden.
+
+Start per Compose:
+
+```sh
+docker compose up -d --build
+```
+
 ## Metriken
 
 Standardmaessig laeuft ein HTTP-Server auf `:2112`. Die Prometheus-Metriken sind dort unter:

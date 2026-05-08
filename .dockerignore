@@ -1,0 +1,10 @@
+.git
+.gitignore
+.dockerignore
+Dockerfile
+docker-compose.yaml
+config.toml
+*.test
+tmp/
+dist/
+build/
