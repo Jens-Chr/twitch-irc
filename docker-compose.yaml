@@ -10,3 +10,12 @@ services:
       - ./config.toml:/app/config.toml:ro
     extra_hosts:
       - "host.docker.internal:host-gateway"
+    networks:
+      - prometheus-network
+      - n8n-network
+
+networks:
+  prometheus-network:
+    external: true
+  n8n-network:
+    external: true
