@@ -4,8 +4,8 @@ services:
     image: twitch-irc:latest
     container_name: twitch-irc
     restart: unless-stopped
-    ports:
-      - "2112:2112"
+    expose:
+      - "2112"
     volumes:
       - ./config.toml:/app/config.toml:ro
     extra_hosts:
