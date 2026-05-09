@@ -15,6 +15,7 @@ type Config struct {
 	Server  ServerConfig  `toml:"server"`
 	Twitch  TwitchConfig  `toml:"twitch"`
 	N8N     N8NConfig     `toml:"n8n"`
+	Loki    LokiConfig    `toml:"loki"`
 	Metrics MetricsConfig `toml:"metrics"`
 	Reply   ReplyConfig   `toml:"reply"`
 }
@@ -32,6 +33,13 @@ type TwitchConfig struct {
 type N8NConfig struct {
 	URL     string `toml:"url"`
 	Timeout string `toml:"timeout"`
+}
+
+type LokiConfig struct {
+	Enabled bool              `toml:"enabled"`
+	URL     string            `toml:"url"`
+	Timeout string            `toml:"timeout"`
+	Labels  map[string]string `toml:"labels"`
 }
 
 type MetricsConfig struct {
@@ -56,6 +64,12 @@ func defaultConfig() Config {
 		},
 		N8N: N8NConfig{
 			Timeout: "5s",
+		},
+		Loki: LokiConfig{
+			Timeout: "2s",
+			Labels: map[string]string{
+				"job": "twitch-irc",
+			},
 		},
 		Metrics: MetricsConfig{
 			Path: "/metrics",
@@ -96,6 +110,9 @@ func (c *Config) normalize() {
 	c.Twitch.Channel = strings.TrimPrefix(strings.TrimSpace(c.Twitch.Channel), "#")
 	c.N8N.URL = strings.TrimSpace(c.N8N.URL)
 	c.N8N.Timeout = strings.TrimSpace(c.N8N.Timeout)
+	c.Loki.URL = strings.TrimSpace(c.Loki.URL)
+	c.Loki.Timeout = strings.TrimSpace(c.Loki.Timeout)
+	c.Loki.Labels = normalizeLabels(c.Loki.Labels)
 	c.Metrics.Address = strings.TrimSpace(c.Metrics.Address)
 	c.Metrics.Path = strings.TrimSpace(c.Metrics.Path)
 	c.Reply.Address = strings.TrimSpace(c.Reply.Address)
@@ -129,6 +146,24 @@ func (c Config) validate() error {
 	}
 	if _, err := time.ParseDuration(c.N8N.Timeout); err != nil {
 		problems = append(problems, fmt.Sprintf("n8n.timeout ist ungueltig: %v", err))
+	}
+
+	if c.Loki.Enabled {
+		if c.Loki.URL == "" {
+			problems = append(problems, "loki.url fehlt")
+		} else if err := validateHTTPURL(c.Loki.URL); err != nil {
+			problems = append(problems, fmt.Sprintf("loki.url ist ungueltig: %v", err))
+		}
+	}
+	if c.Loki.Timeout != "" {
+		if _, err := time.ParseDuration(c.Loki.Timeout); err != nil {
+			problems = append(problems, fmt.Sprintf("loki.timeout ist ungueltig: %v", err))
+		}
+	}
+	for labelName := range c.Loki.Labels {
+		if !isValidLokiLabelName(labelName) {
+			problems = append(problems, fmt.Sprintf("loki.labels.%s ist kein gueltiger Loki-Labelname", labelName))
+		}
 	}
 
 	if c.Metrics.Path == "" {
@@ -175,4 +210,44 @@ func validateHTTPURL(rawURL string) error {
 func (c N8NConfig) timeoutDuration() time.Duration {
 	timeout, _ := time.ParseDuration(c.Timeout)
 	return timeout
+}
+
+func (c LokiConfig) timeoutDuration() time.Duration {
+	timeout, _ := time.ParseDuration(c.Timeout)
+	return timeout
+}
+
+func normalizeLabels(labels map[string]string) map[string]string {
+	normalized := make(map[string]string, len(labels))
+	for name, value := range labels {
+		name = strings.TrimSpace(name)
+		value = strings.TrimSpace(value)
+		if name == "" || value == "" {
+			continue
+		}
+		normalized[name] = value
+	}
+	return normalized
+}
+
+func isValidLokiLabelName(name string) bool {
+	if name == "" {
+		return false
+	}
+
+	for index, char := range name {
+		if index == 0 {
+			if (char >= 'A' && char <= 'Z') || (char >= 'a' && char <= 'z') || char == '_' || char == ':' {
+				continue
+			}
+			return false
+		}
+
+		if (char >= 'A' && char <= 'Z') || (char >= 'a' && char <= 'z') || (char >= '0' && char <= '9') || char == '_' || char == ':' {
+			continue
+		}
+		return false
+	}
+
+	return true
 }

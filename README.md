@@ -1,6 +1,6 @@
 # Twitch IRC Exporter
 
-Kleine Go-Anwendung, die Twitch-Chatnachrichten liest, an einen n8n-Webhook sendet und Prometheus-Metriken bereitstellt.
+Kleine Go-Anwendung, die Twitch-Chatnachrichten liest, an einen n8n-Webhook sendet, Prometheus-Metriken bereitstellt und empfangene sowie gesendete Chatnachrichten optional an Loki uebermittelt.
 
 ## Konfiguration
 
@@ -21,6 +21,7 @@ cp config.example.toml config.toml
 ```
 
 Wenn n8n auf dem Docker-Host laeuft, in `config.toml` fuer `n8n.url` statt `localhost` den Hostnamen `host.docker.internal` verwenden.
+Wenn Loki auf dem Docker-Host laeuft, gilt dasselbe fuer `loki.url`.
 
 Start per Compose:
 
@@ -35,6 +36,22 @@ Standardmaessig laeuft ein HTTP-Server auf `:2112`. Die Prometheus-Metriken sind
 ```text
 http://localhost:2112/metrics
 ```
+
+## Loki
+
+Loki kann in `config.toml` aktiviert werden:
+
+```toml
+[loki]
+enabled = true
+url = "http://localhost:3100/loki/api/v1/push"
+timeout = "2s"
+
+[loki.labels]
+job = "twitch-irc"
+```
+
+Die Anwendung sendet empfangene Twitch-Nachrichten mit `direction="received"` und Nachrichten aus dem n8n-Rueckkanal mit `direction="sent"`. `channel` wird ebenfalls als Label gesetzt; User, Message-ID und Nachrichtentext stehen in der JSON-Logzeile.
 
 ## n8n Rueckkanal
 

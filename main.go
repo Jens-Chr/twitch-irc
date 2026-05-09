@@ -31,16 +31,29 @@ func main() {
 	n8nClient := &http.Client{
 		Timeout: cfg.N8N.timeoutDuration(),
 	}
+	lokiClient := newLokiClient(cfg.Loki)
+	if cfg.Loki.Enabled {
+		log.Printf("Loki Push ist aktiviert: %s", cfg.Loki.URL)
+	} else {
+		log.Println("Loki Push ist deaktiviert")
+	}
 
 	twitchClient := twitch.NewClient(cfg.Twitch.Username, cfg.Twitch.OAuth)
 
 	prometheus.MustRegister(chatMessages)
-	startHTTPServer(cfg.Server, cfg.Metrics, cfg.Reply, twitchClient, cfg.Twitch.Channel)
+	startHTTPServer(cfg.Server, cfg.Metrics, cfg.Reply, twitchClient, cfg.Twitch.Channel, lokiClient)
 
 	twitchClient.OnPrivateMessage(func(message twitch.PrivateMessage) {
 		fmt.Printf("[%s]: %s\n", message.User.DisplayName, message.Message)
 
 		chatMessages.Inc()
+		lokiClient.LogChatMessage(chatMessageLog{
+			Direction: chatMessageDirectionReceived,
+			Channel:   message.Channel,
+			User:      message.User.DisplayName,
+			Message:   message.Message,
+			MessageID: message.ID,
+		})
 		sendToN8N(n8nClient, cfg.N8N.URL, message)
 	})
 

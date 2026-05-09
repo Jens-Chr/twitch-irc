@@ -1,0 +1,129 @@
+package main
+
+import (
+	"bytes"
+	"encoding/json"
+	"log"
+	"net/http"
+	"strconv"
+	"time"
+)
+
+const (
+	chatMessageDirectionReceived = "received"
+	chatMessageDirectionSent     = "sent"
+)
+
+type chatMessageLogger interface {
+	LogChatMessage(chatMessageLog)
+}
+
+type chatMessageLog struct {
+	Direction        string
+	Channel          string
+	User             string
+	Message          string
+	MessageID        string
+	ReplyToMessageID string
+}
+
+type lokiClient struct {
+	enabled bool
+	url     string
+	labels  map[string]string
+	client  *http.Client
+	now     func() time.Time
+}
+
+type lokiPushRequest struct {
+	Streams []lokiStream `json:"streams"`
+}
+
+type lokiStream struct {
+	Stream map[string]string `json:"stream"`
+	Values [][2]string       `json:"values"`
+}
+
+func newLokiClient(cfg LokiConfig) *lokiClient {
+	return &lokiClient{
+		enabled: cfg.Enabled,
+		url:     cfg.URL,
+		labels:  cfg.Labels,
+		client: &http.Client{
+			Timeout: cfg.timeoutDuration(),
+		},
+		now: time.Now,
+	}
+}
+
+func (c *lokiClient) LogChatMessage(entry chatMessageLog) {
+	if c == nil || !c.enabled {
+		return
+	}
+
+	line, err := json.Marshal(lokiLinePayload(entry))
+	if err != nil {
+		log.Printf("Loki Payload konnte nicht serialisiert werden: %v", err)
+		return
+	}
+
+	payload := lokiPushRequest{
+		Streams: []lokiStream{
+			{
+				Stream: c.streamLabels(entry),
+				Values: [][2]string{
+					{strconv.FormatInt(c.now().UnixNano(), 10), string(line)},
+				},
+			},
+		},
+	}
+
+	jsonData, err := json.Marshal(payload)
+	if err != nil {
+		log.Printf("Loki Push konnte nicht serialisiert werden: %v", err)
+		return
+	}
+
+	resp, err := c.client.Post(c.url, "application/json", bytes.NewReader(jsonData))
+	if err != nil {
+		log.Printf("Loki Push konnte nicht aufgerufen werden: %v", err)
+		return
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
+		log.Printf("Loki Push antwortete mit Status %s", resp.Status)
+	}
+}
+
+func (c *lokiClient) streamLabels(entry chatMessageLog) map[string]string {
+	labels := make(map[string]string, len(c.labels)+2)
+	for name, value := range c.labels {
+		labels[name] = value
+	}
+	labels["direction"] = entry.Direction
+	if entry.Channel != "" {
+		labels["channel"] = entry.Channel
+	}
+	return labels
+}
+
+func lokiLinePayload(entry chatMessageLog) map[string]string {
+	payload := map[string]string{
+		"direction": entry.Direction,
+		"channel":   entry.Channel,
+		"message":   entry.Message,
+	}
+
+	if entry.User != "" {
+		payload["user"] = entry.User
+	}
+	if entry.MessageID != "" {
+		payload["message_id"] = entry.MessageID
+	}
+	if entry.ReplyToMessageID != "" {
+		payload["reply_to_message_id"] = entry.ReplyToMessageID
+	}
+
+	return payload
+}

@@ -24,7 +24,7 @@ type replyResponse struct {
 	Channel string `json:"channel"`
 }
 
-func handleReplyRequest(cfg ReplyConfig, twitchClient twitchMessenger, defaultChannel string) http.HandlerFunc {
+func handleReplyRequest(cfg ReplyConfig, twitchClient twitchMessenger, defaultChannel string, chatLogger chatMessageLogger) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			w.Header().Set("Allow", http.MethodPost)
@@ -65,6 +65,14 @@ func handleReplyRequest(cfg ReplyConfig, twitchClient twitchMessenger, defaultCh
 			twitchClient.Reply(channel, replyToMessageID, message)
 		} else {
 			twitchClient.Say(channel, message)
+		}
+		if chatLogger != nil {
+			chatLogger.LogChatMessage(chatMessageLog{
+				Direction:        chatMessageDirectionSent,
+				Channel:          channel,
+				Message:          message,
+				ReplyToMessageID: replyToMessageID,
+			})
 		}
 
 		w.Header().Set("Content-Type", "application/json")
