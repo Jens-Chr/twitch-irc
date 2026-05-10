@@ -8,13 +8,13 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
-func startHTTPServer(serverCfg ServerConfig, metricsCfg MetricsConfig, replyCfg ReplyConfig, twitchClient twitchMessenger, defaultChannel string, chatLogger chatMessageLogger) {
+func startHTTPServer(serverCfg ServerConfig, metricsCfg MetricsConfig, replyCfg ReplyConfig, twitchClient twitchMessenger, defaultChannel, defaultUser string, chatLogger chatMessageLogger) {
 	mux := http.NewServeMux()
 	mux.Handle(metricsCfg.Path, promhttp.Handler())
 	log.Printf("Metrics laufen auf %s%s", serverCfg.Address, metricsCfg.Path)
 
 	if replyCfg.Enabled {
-		mux.HandleFunc(replyCfg.Path, handleReplyRequest(replyCfg, twitchClient, defaultChannel, chatLogger))
+		mux.HandleFunc(replyCfg.Path, handleReplyRequest(replyCfg, twitchClient, defaultChannel, defaultUser, chatLogger))
 		log.Printf("n8n Rueckkanal laeuft auf %s%s", serverCfg.Address, replyCfg.Path)
 		if replyCfg.Token == "" {
 			log.Println("n8n Rueckkanal laeuft ohne Token-Schutz")

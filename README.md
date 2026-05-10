@@ -64,4 +64,4 @@ curl -X POST http://127.0.0.1:2112/n8n/reply \
   -d '{"message":"Hallo Chat!"}'
 ```
 
-Optional kann n8n `channel` und `reply_to_message_id` mitsenden. Ohne `channel` wird der konfigurierte Twitch-Channel verwendet.
+Optional kann n8n `channel`, `user` und `reply_to_message_id` mitsenden. Ohne `channel` wird der konfigurierte Twitch-Channel verwendet, ohne `user` der konfigurierte Twitch-Username.

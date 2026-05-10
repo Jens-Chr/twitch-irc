@@ -16,6 +16,7 @@ type twitchMessenger interface {
 type replyRequest struct {
 	Message          string `json:"message"`
 	Channel          string `json:"channel,omitempty"`
+	User             string `json:"user,omitempty"`
 	ReplyToMessageID string `json:"reply_to_message_id,omitempty"`
 }
 
@@ -24,7 +25,7 @@ type replyResponse struct {
 	Channel string `json:"channel"`
 }
 
-func handleReplyRequest(cfg ReplyConfig, twitchClient twitchMessenger, defaultChannel string, chatLogger chatMessageLogger) http.HandlerFunc {
+func handleReplyRequest(cfg ReplyConfig, twitchClient twitchMessenger, defaultChannel, defaultUser string, chatLogger chatMessageLogger) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			w.Header().Set("Allow", http.MethodPost)
@@ -60,6 +61,10 @@ func handleReplyRequest(cfg ReplyConfig, twitchClient twitchMessenger, defaultCh
 			channel = defaultChannel
 		}
 
+		user := strings.TrimSpace(req.User)
+		if user == "" {
+			user = defaultUser
+		}
 		replyToMessageID := strings.TrimSpace(req.ReplyToMessageID)
 		if replyToMessageID != "" {
 			twitchClient.Reply(channel, replyToMessageID, message)
@@ -70,6 +75,7 @@ func handleReplyRequest(cfg ReplyConfig, twitchClient twitchMessenger, defaultCh
 			chatLogger.LogChatMessage(chatMessageLog{
 				Direction:        chatMessageDirectionSent,
 				Channel:          channel,
+				User:             user,
 				Message:          message,
 				ReplyToMessageID: replyToMessageID,
 			})

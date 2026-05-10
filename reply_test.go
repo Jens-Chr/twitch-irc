@@ -47,7 +47,7 @@ func TestHandleReplyRequestSendsMessageToDefaultChannel(t *testing.T) {
 	}
 	messenger := &fakeMessenger{}
 	logger := &fakeChatLogger{}
-	handler := handleReplyRequest(cfg, messenger, "default-channel", logger)
+	handler := handleReplyRequest(cfg, messenger, "default-channel", "config-user", logger)
 
 	req := httptest.NewRequest(http.MethodPost, "/n8n/reply", strings.NewReader(`{"message":"Hallo Chat!"}`))
 	req.Header.Set("Authorization", "Bearer secret")
@@ -67,7 +67,7 @@ func TestHandleReplyRequestSendsMessageToDefaultChannel(t *testing.T) {
 	if len(logger.entries) != 1 {
 		t.Fatalf("expected one Loki log entry, got %d", len(logger.entries))
 	}
-	if logger.entries[0].Direction != chatMessageDirectionSent || logger.entries[0].Channel != "default-channel" || logger.entries[0].Message != "Hallo Chat!" {
+	if logger.entries[0].Direction != chatMessageDirectionSent || logger.entries[0].Channel != "default-channel" || logger.entries[0].User != "config-user" || logger.entries[0].Message != "Hallo Chat!" {
 		t.Fatalf("unexpected Loki log entry: %+v", logger.entries[0])
 	}
 }
@@ -79,9 +79,9 @@ func TestHandleReplyRequestSendsThreadedReply(t *testing.T) {
 	}
 	messenger := &fakeMessenger{}
 	logger := &fakeChatLogger{}
-	handler := handleReplyRequest(cfg, messenger, "default-channel", logger)
+	handler := handleReplyRequest(cfg, messenger, "default-channel", "config-user", logger)
 
-	req := httptest.NewRequest(http.MethodPost, "/n8n/reply", strings.NewReader(`{"message":"Antwort","channel":"#anderer-channel","reply_to_message_id":"abc123"}`))
+	req := httptest.NewRequest(http.MethodPost, "/n8n/reply", strings.NewReader(`{"message":"Antwort","channel":"#anderer-channel","user":"test-user","reply_to_message_id":"abc123"}`))
 	rr := httptest.NewRecorder()
 
 	handler.ServeHTTP(rr, req)
@@ -98,7 +98,32 @@ func TestHandleReplyRequestSendsThreadedReply(t *testing.T) {
 	if len(logger.entries) != 1 {
 		t.Fatalf("expected one Loki log entry, got %d", len(logger.entries))
 	}
-	if logger.entries[0].Direction != chatMessageDirectionSent || logger.entries[0].Channel != "anderer-channel" || logger.entries[0].ReplyToMessageID != "abc123" || logger.entries[0].Message != "Antwort" {
+	if logger.entries[0].Direction != chatMessageDirectionSent || logger.entries[0].Channel != "anderer-channel" || logger.entries[0].User != "test-user" || logger.entries[0].ReplyToMessageID != "abc123" || logger.entries[0].Message != "Antwort" {
+		t.Fatalf("unexpected Loki log entry: %+v", logger.entries[0])
+	}
+}
+
+func TestHandleReplyRequestUsesDefaultUserForThreadedReply(t *testing.T) {
+	cfg := ReplyConfig{
+		Enabled:          true,
+		MaxMessageLength: 450,
+	}
+	messenger := &fakeMessenger{}
+	logger := &fakeChatLogger{}
+	handler := handleReplyRequest(cfg, messenger, "default-channel", "config-user", logger)
+
+	req := httptest.NewRequest(http.MethodPost, "/n8n/reply", strings.NewReader(`{"message":"Antwort","reply_to_message_id":"abc123"}`))
+	rr := httptest.NewRecorder()
+
+	handler.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusAccepted {
+		t.Fatalf("expected status %d, got %d", http.StatusAccepted, rr.Code)
+	}
+	if len(logger.entries) != 1 {
+		t.Fatalf("expected one Loki log entry, got %d", len(logger.entries))
+	}
+	if logger.entries[0].Direction != chatMessageDirectionSent || logger.entries[0].Channel != "default-channel" || logger.entries[0].User != "config-user" || logger.entries[0].ReplyToMessageID != "abc123" || logger.entries[0].Message != "Antwort" {
 		t.Fatalf("unexpected Loki log entry: %+v", logger.entries[0])
 	}
 }
@@ -111,7 +136,7 @@ func TestHandleReplyRequestRejectsUnauthorizedRequest(t *testing.T) {
 	}
 	messenger := &fakeMessenger{}
 	logger := &fakeChatLogger{}
-	handler := handleReplyRequest(cfg, messenger, "default-channel", logger)
+	handler := handleReplyRequest(cfg, messenger, "default-channel", "config-user", logger)
 
 	req := httptest.NewRequest(http.MethodPost, "/n8n/reply", strings.NewReader(`{"message":"Hallo Chat!"}`))
 	rr := httptest.NewRecorder()

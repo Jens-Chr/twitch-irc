@@ -41,7 +41,7 @@ func main() {
 	twitchClient := twitch.NewClient(cfg.Twitch.Username, cfg.Twitch.OAuth)
 
 	prometheus.MustRegister(chatMessages)
-	startHTTPServer(cfg.Server, cfg.Metrics, cfg.Reply, twitchClient, cfg.Twitch.Channel, lokiClient)
+	startHTTPServer(cfg.Server, cfg.Metrics, cfg.Reply, twitchClient, cfg.Twitch.Channel, cfg.Twitch.Username, lokiClient)
 
 	twitchClient.OnPrivateMessage(func(message twitch.PrivateMessage) {
 		fmt.Printf("[%s]: %s\n", message.User.DisplayName, message.Message)
