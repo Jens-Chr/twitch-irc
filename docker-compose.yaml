@@ -6,6 +6,21 @@ services:
     restart: unless-stopped
     expose:
       - "2112"
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=n8n-network"
+      - "traefik.http.routers.twitch-irc-overlay-http.rule=Host(`${TWITCH_IRC_OVERLAY_DOMAIN:-localhost}`) && (Path(`/overlay/chat`) || Path(`/overlay/chat/`) || Path(`/overlay/chat/events`))"
+      - "traefik.http.routers.twitch-irc-overlay-http.entrypoints=web"
+      - "traefik.http.routers.twitch-irc-overlay-http.middlewares=twitch-irc-overlay-redirect-to-https"
+      - "traefik.http.middlewares.twitch-irc-overlay-redirect-to-https.redirectscheme.scheme=https"
+      - "traefik.http.middlewares.twitch-irc-overlay-redirect-to-https.redirectscheme.permanent=true"
+      - "traefik.http.routers.twitch-irc-overlay.rule=Host(`${TWITCH_IRC_OVERLAY_DOMAIN:-localhost}`) && (Path(`/overlay/chat`) || Path(`/overlay/chat/`) || Path(`/overlay/chat/events`))"
+      - "traefik.http.routers.twitch-irc-overlay.entrypoints=websecure"
+      - "traefik.http.routers.twitch-irc-overlay.tls=true"
+      - "traefik.http.routers.twitch-irc-overlay.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.twitch-irc-overlay.priority=100"
+      - "traefik.http.services.twitch-irc-overlay.loadbalancer.server.scheme=http"
+      - "traefik.http.services.twitch-irc-overlay.loadbalancer.server.port=2112"
     volumes:
       - ./config.toml:/app/config.toml:ro
     extra_hosts:

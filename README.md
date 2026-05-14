@@ -89,3 +89,13 @@ message_ttl = "45s"
 ```
 
 Wichtig fuer den Proxy: Die Event-Route liegt relativ zur Overlay-URL unter `events`, also zum Beispiel `/overlay/chat/events`. Fuer Nginx sollte Streaming-Buffering fuer diese Route deaktiviert werden.
+
+### Traefik
+
+`docker-compose.yaml` veroeffentlicht nur das Overlay ueber Traefik:
+
+- `/overlay/chat`
+- `/overlay/chat/`
+- `/overlay/chat/events`
+
+Setze fuer die Internet-Route `TWITCH_IRC_OVERLAY_DOMAIN` auf die gewuenschte Domain. Wenn dieselbe Domain wie fuer n8n genutzt wird, bleibt n8n fuer alle anderen Pfade erreichbar; `/n8n/reply` wird nicht ueber Traefik an `twitch-irc` geroutet.
