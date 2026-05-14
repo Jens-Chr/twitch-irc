@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Twitch Chat Overlay</title>
+<link rel="stylesheet" href="?asset=chat.css">
+</head>
+<body>
+<main id="messages" aria-live="polite"></main>
+<script>
+(() => {
+	"use strict";
+
+	const config = {{ .ConfigJSON }};
+	const root = document.getElementById("messages");
+	const seen = new Set();
+	const colors = [
+		"#22c55e",
+		"#38bdf8",
+		"#f97316",
+		"#e879f9",
+		"#facc15",
+		"#fb7185",
+		"#2dd4bf",
+		"#a78bfa"
+	];
+
+	function eventPath() {
+		const path = window.location.pathname.replace(/\/+$/, "");
+		return path + "/events" + window.location.search;
+	}
+
+	function colorFor(user) {
+		let hash = 0;
+		for (const char of user || "chat") {
+			hash = ((hash << 5) - hash + char.charCodeAt(0)) | 0;
+		}
+		return colors[Math.abs(hash) % colors.length];
+	}
+
+	function addMessage(message, fromSnapshot = false) {
+		if (!message || !message.id || seen.has(message.id)) {
+			return;
+		}
+		seen.add(message.id);
+
+		const item = document.createElement("article");
+		item.className = "message";
+		item.style.setProperty("--accent", colorFor(message.user));
+		item.dataset.id = message.id;
+
+		const bubble = document.createElement("div");
+		bubble.className = "bubble";
+
+		const meta = document.createElement("div");
+		meta.className = "meta";
+
+		const user = document.createElement("div");
+		user.className = "user";
+		user.textContent = message.user || "Chat";
+		meta.append(user);
+
+		if (message.direction === "sent") {
+			const tag = document.createElement("div");
+			tag.className = "tag";
+			tag.textContent = "Bot";
+			meta.append(tag);
+		}
+
+		const text = document.createElement("div");
+		text.className = "text";
+		text.textContent = message.message || "";
+
+		bubble.append(meta, text);
+		item.append(bubble);
+		root.append(item);
+
+		if (fromSnapshot) {
+			item.style.animation = "none";
+		}
+
+		window.setTimeout(() => hideMessage(item), config.messageTtlMs);
+		trimMessages();
+	}
+
+	function hideMessage(item) {
+		item.classList.add("is-hidden");
+		window.setTimeout(() => item.remove(), 260);
+	}
+
+	function trimMessages() {
+		while (root.children.length > config.maxMessages) {
+			const first = root.firstElementChild;
+			if (!first) {
+				return;
+			}
+			seen.delete(first.dataset.id);
+			first.remove();
+		}
+	}
+
+	function connect() {
+		const source = new EventSource(eventPath());
+
+		source.addEventListener("snapshot", (event) => {
+			const messages = JSON.parse(event.data);
+			for (const message of messages) {
+				addMessage(message, true);
+			}
+		});
+
+		source.addEventListener("message", (event) => {
+			addMessage(JSON.parse(event.data));
+		});
+	}
+
+	connect();
+})();
+</script>
+</body>
+</html>

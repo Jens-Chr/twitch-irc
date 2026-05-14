@@ -8,7 +8,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
-func startHTTPServer(serverCfg ServerConfig, metricsCfg MetricsConfig, replyCfg ReplyConfig, twitchClient twitchMessenger, defaultChannel, defaultUser string, chatLogger chatMessageLogger) {
+func startHTTPServer(serverCfg ServerConfig, metricsCfg MetricsConfig, replyCfg ReplyConfig, overlayCfg OverlayConfig, twitchClient twitchMessenger, defaultChannel, defaultUser string, chatLogger chatMessageLogger, overlay *chatOverlay) {
 	mux := http.NewServeMux()
 	mux.Handle(metricsCfg.Path, promhttp.Handler())
 	log.Printf("Metrics laufen auf %s%s", serverCfg.Address, metricsCfg.Path)
@@ -21,6 +21,22 @@ func startHTTPServer(serverCfg ServerConfig, metricsCfg MetricsConfig, replyCfg 
 		}
 	} else {
 		log.Println("n8n Rueckkanal ist deaktiviert")
+	}
+
+	if overlayCfg.Enabled && overlay != nil {
+		overlayPageHandler := overlay.handlePage(overlayCfg)
+		mux.HandleFunc(overlayCfg.Path, overlayPageHandler)
+		mux.HandleFunc(overlayCfg.Path+"/", func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Path != overlayCfg.Path+"/" {
+				http.NotFound(w, r)
+				return
+			}
+			overlayPageHandler(w, r)
+		})
+		mux.HandleFunc(overlayCfg.eventPath(), overlay.handleEvents())
+		log.Printf("OBS Chat-Overlay laeuft auf %s%s", serverCfg.Address, overlayCfg.Path)
+	} else {
+		log.Println("OBS Chat-Overlay ist deaktiviert")
 	}
 
 	server := &http.Server{

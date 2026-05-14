@@ -18,6 +18,8 @@ type chatMessageLogger interface {
 	LogChatMessage(chatMessageLog)
 }
 
+type multiChatMessageLogger []chatMessageLogger
+
 type chatMessageLog struct {
 	Direction        string
 	Channel          string
@@ -25,6 +27,14 @@ type chatMessageLog struct {
 	Message          string
 	MessageID        string
 	ReplyToMessageID string
+}
+
+func (l multiChatMessageLogger) LogChatMessage(entry chatMessageLog) {
+	for _, logger := range l {
+		if logger != nil {
+			logger.LogChatMessage(entry)
+		}
+	}
 }
 
 type lokiClient struct {

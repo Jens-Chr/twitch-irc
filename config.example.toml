@@ -26,3 +26,9 @@ enabled = true
 path = "/n8n/reply"
 token = "DEIN_RUECKKANAL_TOKEN"
 max_message_length = 450
+
+[overlay]
+enabled = true
+path = "/overlay/chat"
+max_messages = 60
+message_ttl = "45s"

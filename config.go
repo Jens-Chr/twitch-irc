@@ -18,6 +18,7 @@ type Config struct {
 	Loki    LokiConfig    `toml:"loki"`
 	Metrics MetricsConfig `toml:"metrics"`
 	Reply   ReplyConfig   `toml:"reply"`
+	Overlay OverlayConfig `toml:"overlay"`
 }
 
 type ServerConfig struct {
@@ -57,6 +58,13 @@ type ReplyConfig struct {
 	MaxMessageLength int    `toml:"max_message_length"`
 }
 
+type OverlayConfig struct {
+	Enabled     bool   `toml:"enabled"`
+	Path        string `toml:"path"`
+	MaxMessages int    `toml:"max_messages"`
+	MessageTTL  string `toml:"message_ttl"`
+}
+
 func defaultConfig() Config {
 	return Config{
 		Server: ServerConfig{
@@ -78,6 +86,12 @@ func defaultConfig() Config {
 			Enabled:          true,
 			Path:             "/n8n/reply",
 			MaxMessageLength: 450,
+		},
+		Overlay: OverlayConfig{
+			Enabled:     true,
+			Path:        "/overlay/chat",
+			MaxMessages: 60,
+			MessageTTL:  "45s",
 		},
 	}
 }
@@ -118,6 +132,8 @@ func (c *Config) normalize() {
 	c.Reply.Address = strings.TrimSpace(c.Reply.Address)
 	c.Reply.Path = strings.TrimSpace(c.Reply.Path)
 	c.Reply.Token = strings.TrimSpace(c.Reply.Token)
+	c.Overlay.Path = normalizeOverlayPath(c.Overlay.Path)
+	c.Overlay.MessageTTL = strings.TrimSpace(c.Overlay.MessageTTL)
 }
 
 func (c Config) validate() error {
@@ -186,6 +202,36 @@ func (c Config) validate() error {
 		}
 	}
 
+	if c.Overlay.Enabled {
+		overlayEventPath := c.Overlay.eventPath()
+		if c.Overlay.Path == "" {
+			problems = append(problems, "overlay.path fehlt")
+		} else if c.Overlay.Path == "/" {
+			problems = append(problems, "overlay.path darf nicht \"/\" sein")
+		} else if !strings.HasPrefix(c.Overlay.Path, "/") {
+			problems = append(problems, "overlay.path muss mit \"/\" beginnen")
+		}
+		if c.Overlay.MaxMessages <= 0 {
+			problems = append(problems, "overlay.max_messages muss groesser als 0 sein")
+		}
+		if c.Overlay.MessageTTL == "" {
+			problems = append(problems, "overlay.message_ttl fehlt")
+		} else {
+			messageTTL, err := time.ParseDuration(c.Overlay.MessageTTL)
+			if err != nil {
+				problems = append(problems, fmt.Sprintf("overlay.message_ttl ist ungueltig: %v", err))
+			} else if messageTTL <= 0 {
+				problems = append(problems, "overlay.message_ttl muss groesser als 0 sein")
+			}
+		}
+		if c.Metrics.Path == c.Overlay.Path || c.Metrics.Path == overlayEventPath {
+			problems = append(problems, "metrics.path und overlay.path muessen unterschiedlich sein")
+		}
+		if c.Reply.Enabled && (c.Reply.Path == c.Overlay.Path || c.Reply.Path == overlayEventPath) {
+			problems = append(problems, "reply.path und overlay.path muessen unterschiedlich sein")
+		}
+	}
+
 	if len(problems) > 0 {
 		return errors.New(strings.Join(problems, "; "))
 	}
@@ -215,6 +261,23 @@ func (c N8NConfig) timeoutDuration() time.Duration {
 func (c LokiConfig) timeoutDuration() time.Duration {
 	timeout, _ := time.ParseDuration(c.Timeout)
 	return timeout
+}
+
+func (c OverlayConfig) eventPath() string {
+	return strings.TrimRight(c.Path, "/") + "/events"
+}
+
+func (c OverlayConfig) messageTTLDuration() time.Duration {
+	timeout, _ := time.ParseDuration(c.MessageTTL)
+	return timeout
+}
+
+func normalizeOverlayPath(path string) string {
+	path = strings.TrimSpace(path)
+	if path == "" || path == "/" {
+		return path
+	}
+	return strings.TrimRight(path, "/")
 }
 
 func normalizeLabels(labels map[string]string) map[string]string {

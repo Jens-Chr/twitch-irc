@@ -65,3 +65,27 @@ curl -X POST http://127.0.0.1:2112/n8n/reply \
 ```
 
 Optional kann n8n `channel`, `user` und `reply_to_message_id` mitsenden. Ohne `channel` wird der konfigurierte Twitch-Channel verwendet, ohne `user` der konfigurierte Twitch-Username.
+
+## OBS Chat-Overlay
+
+Der Bot stellt ein transparentes Browser-Overlay fuer OBS bereit. Standard-URL:
+
+```text
+http://localhost:2112/overlay/chat
+```
+
+Das Overlay nutzt Server-Sent Events unter `/overlay/chat/events`, zeigt beim Laden noch aktive Nachrichten erneut an und blendet sie nach `overlay.message_ttl` aus. Nachrichten aus dem n8n-Rueckkanal erscheinen mit einem kleinen `Bot`-Hinweis.
+
+HTML und CSS liegen getrennt unter `overlay_assets/chat.html` und `overlay_assets/chat.css`. Sie werden beim Build in das Go-Binary eingebettet.
+
+Die Route kann fuer einen spaeteren Reverse-Proxy angepasst werden:
+
+```toml
+[overlay]
+enabled = true
+path = "/overlay/chat"
+max_messages = 60
+message_ttl = "45s"
+```
+
+Wichtig fuer den Proxy: Die Event-Route liegt relativ zur Overlay-URL unter `events`, also zum Beispiel `/overlay/chat/events`. Fuer Nginx sollte Streaming-Buffering fuer diese Route deaktiviert werden.

@@ -39,15 +39,23 @@ func main() {
 	}
 
 	twitchClient := twitch.NewClient(cfg.Twitch.Username, cfg.Twitch.OAuth)
+	var overlay *chatOverlay
+	if cfg.Overlay.Enabled {
+		overlay = newChatOverlay(cfg.Overlay)
+	}
+	chatLogger := multiChatMessageLogger{lokiClient}
+	if overlay != nil {
+		chatLogger = append(chatLogger, overlay)
+	}
 
 	prometheus.MustRegister(chatMessages)
-	startHTTPServer(cfg.Server, cfg.Metrics, cfg.Reply, twitchClient, cfg.Twitch.Channel, cfg.Twitch.Username, lokiClient)
+	startHTTPServer(cfg.Server, cfg.Metrics, cfg.Reply, cfg.Overlay, twitchClient, cfg.Twitch.Channel, cfg.Twitch.Username, chatLogger, overlay)
 
 	twitchClient.OnPrivateMessage(func(message twitch.PrivateMessage) {
 		fmt.Printf("[%s]: %s\n", message.User.DisplayName, message.Message)
 
 		chatMessages.Inc()
-		lokiClient.LogChatMessage(chatMessageLog{
+		chatLogger.LogChatMessage(chatMessageLog{
 			Direction: chatMessageDirectionReceived,
 			Channel:   message.Channel,
 			User:      message.User.DisplayName,
