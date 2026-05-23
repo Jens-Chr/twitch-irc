@@ -7,6 +7,7 @@
 	--color-warning: #f59e0b;
 	--color-text: #e5e7eb;
 	--color-text-secondary: #94A3B8;
+	--color-message-background: rgba(15, 23, 42, 0.86);
 	--shadow: 0 12px 32px rgba(0, 0, 0, 0.38);
 }
 
@@ -71,7 +72,7 @@ body {
 	min-width: 0;
 	padding: 10px 13px 11px;
 	border-radius: 0 7px 7px 0;
-	background: var(--color-background);
+	background: var(--color-message-background);
 	border: 1px solid var(--color-surface);
 	border-left: 0;
 	backdrop-filter: blur(10px);
