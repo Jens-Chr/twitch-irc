@@ -15,28 +15,9 @@
 	const config = {{ .ConfigJSON }};
 	const root = document.getElementById("messages");
 	const seen = new Set();
-	const colors = [
-		"#22c55e",
-		"#38bdf8",
-		"#f97316",
-		"#e879f9",
-		"#facc15",
-		"#fb7185",
-		"#2dd4bf",
-		"#a78bfa"
-	];
-
 	function eventPath() {
 		const path = window.location.pathname.replace(/\/+$/, "");
 		return path + "/events" + window.location.search;
-	}
-
-	function colorFor(user) {
-		let hash = 0;
-		for (const char of user || "chat") {
-			hash = ((hash << 5) - hash + char.charCodeAt(0)) | 0;
-		}
-		return colors[Math.abs(hash) % colors.length];
 	}
 
 	function addMessage(message, fromSnapshot = false) {
@@ -46,8 +27,7 @@
 		seen.add(message.id);
 
 		const item = document.createElement("article");
-		item.className = "message";
-		item.style.setProperty("--accent", colorFor(message.user));
+		item.className = message.direction === "sent" ? "message is-sent" : "message";
 		item.dataset.id = message.id;
 
 		const bubble = document.createElement("div");
