@@ -15,6 +15,10 @@
 	const config = {{ .ConfigJSON }};
 	const root = document.getElementById("messages");
 	const seen = new Set();
+	const emotesByCode = new Map();
+	const channelEmoteLoads = new Map();
+	const loadedChannelEmotes = new Set();
+	let renderQueue = Promise.resolve();
 	const assignedUserColors = {
 		sali_huepft: "#885cf6"
 	};
@@ -28,6 +32,7 @@
 		"#2dd4bf",
 		"#a78bfa"
 	];
+	const globalEmotesReady = loadGlobalEmotes();
 
 	function eventPath() {
 		const path = window.location.pathname.replace(/\/+$/, "");
@@ -47,8 +52,219 @@
 		return colors[Math.abs(hash) % colors.length];
 	}
 
-	function addMessage(message, fromSnapshot = false) {
+	function normalizeChannel(channel) {
+		return (channel || "").replace(/^#/, "").trim().toLowerCase();
+	}
+
+	function normalizeURL(url) {
+		if (!url) {
+			return "";
+		}
+		if (url.startsWith("//")) {
+			return "https:" + url;
+		}
+		if (url.startsWith("/")) {
+			return "https://cdn.7tv.app" + url;
+		}
+		return url;
+	}
+
+	async function fetchJSON(url, timeoutMs = 3500) {
+		const controller = new AbortController();
+		const timeout = window.setTimeout(() => controller.abort(), timeoutMs);
+		try {
+			const response = await fetch(url, {
+				cache: "reload",
+				signal: controller.signal
+			});
+			if (!response.ok) {
+				throw new Error(response.status + " " + response.statusText);
+			}
+			return response.json();
+		} finally {
+			window.clearTimeout(timeout);
+		}
+	}
+
+	async function loadProvider(name, task) {
+		try {
+			await task();
+		} catch (error) {
+			console.warn("Emotes konnten nicht geladen werden:", name, error);
+		}
+	}
+
+	function registerThirdPartyEmote(code, descriptor) {
+		if (!code || /\s/u.test(code) || !descriptor.url) {
+			return;
+		}
+		const current = emotesByCode.get(code);
+		if (!current || descriptor.priority >= current.priority) {
+			emotesByCode.set(code, descriptor);
+		}
+	}
+
+	async function loadGlobalEmotes() {
+		await Promise.allSettled([
+			loadProvider("BTTV global", loadBTTVGlobalEmotes),
+			loadProvider("FFZ global", loadFFZGlobalEmotes),
+			loadProvider("7TV global", loadSevenTVGlobalEmotes)
+		]);
+	}
+
+	function loadChannelEmotes(channelId, channel) {
+		const normalizedChannel = normalizeChannel(channel);
+		const normalizedID = (channelId || "").trim();
+		if (!normalizedChannel && !normalizedID) {
+			return Promise.resolve();
+		}
+
+		const key = normalizedID + ":" + normalizedChannel;
+		if (loadedChannelEmotes.has(key)) {
+			return Promise.resolve();
+		}
+		if (channelEmoteLoads.has(key)) {
+			return channelEmoteLoads.get(key);
+		}
+
+		const load = Promise.allSettled([
+			loadProvider("BTTV channel", () => loadBTTVChannelEmotes(normalizedID)),
+			loadProvider("FFZ channel", () => loadFFZChannelEmotes(normalizedID, normalizedChannel)),
+			loadProvider("7TV channel", () => loadSevenTVChannelEmotes(normalizedID))
+		]).finally(() => {
+			loadedChannelEmotes.add(key);
+			channelEmoteLoads.delete(key);
+		});
+
+		channelEmoteLoads.set(key, load);
+		return load;
+	}
+
+	async function ensureEmotesFor(message) {
+		const channelID = message.channelId || config.channelId || "";
+		const channel = message.channel || config.channel || "";
+		await Promise.allSettled([
+			globalEmotesReady,
+			loadChannelEmotes(channelID, channel)
+		]);
+	}
+
+	async function loadBTTVGlobalEmotes() {
+		const emotes = await fetchJSON("https://api.betterttv.net/3/cached/emotes/global");
+		registerBTTVEmotes(emotes, 20);
+	}
+
+	async function loadBTTVChannelEmotes(channelID) {
+		if (!channelID) {
+			return;
+		}
+		const data = await fetchJSON("https://api.betterttv.net/3/cached/users/twitch/" + encodeURIComponent(channelID));
+		registerBTTVEmotes(data.channelEmotes, 50);
+		registerBTTVEmotes(data.sharedEmotes, 50);
+	}
+
+	function registerBTTVEmotes(emotes, priority) {
+		for (const emote of emotes || []) {
+			if (!emote || emote.modifier) {
+				continue;
+			}
+			registerThirdPartyEmote(emote.code, {
+				provider: "BTTV",
+				priority,
+				url: "https://cdn.betterttv.net/emote/" + encodeURIComponent(emote.id) + "/3x",
+				width: emote.width || 28,
+				height: emote.height || 28
+			});
+		}
+	}
+
+	async function loadFFZGlobalEmotes() {
+		const data = await fetchJSON("https://api.frankerfacez.com/v1/set/global");
+		registerFFZSets(data.sets, 10);
+	}
+
+	async function loadFFZChannelEmotes(channelID, channel) {
+		const path = channelID ? "id/" + encodeURIComponent(channelID) : encodeURIComponent(channel);
+		if (!path) {
+			return;
+		}
+		const data = await fetchJSON("https://api.frankerfacez.com/v1/room/" + path);
+		registerFFZSets(data.sets, 40);
+	}
+
+	function registerFFZSets(sets, priority) {
+		for (const set of Object.values(sets || {})) {
+			for (const emote of set.emoticons || []) {
+				if (emote.modifier) {
+					continue;
+				}
+				const urls = emote.urls || {};
+				const url = normalizeURL(urls[4] || urls[2] || urls[1]);
+				registerThirdPartyEmote(emote.name, {
+					provider: "FFZ",
+					priority,
+					url,
+					width: emote.width || 28,
+					height: emote.height || 28
+				});
+			}
+		}
+	}
+
+	async function loadSevenTVGlobalEmotes() {
+		const data = await fetchJSON("https://7tv.io/v3/emote-sets/global");
+		registerSevenTVEmotes(data.emotes, 30);
+	}
+
+	async function loadSevenTVChannelEmotes(channelID) {
+		if (!channelID) {
+			return;
+		}
+		const data = await fetchJSON("https://7tv.io/v3/users/twitch/" + encodeURIComponent(channelID));
+		registerSevenTVEmotes(data.emote_set && data.emote_set.emotes, 60);
+	}
+
+	function registerSevenTVEmotes(emotes, priority) {
+		for (const emote of emotes || []) {
+			const data = emote.data || emote;
+			const file = chooseSevenTVFile((data.host && data.host.files) || []);
+			const hostURL = normalizeURL((data.host && data.host.url) || ("//cdn.7tv.app/emote/" + encodeURIComponent(data.id || emote.id || "")));
+			if (!file || !hostURL) {
+				continue;
+			}
+			registerThirdPartyEmote(emote.name || data.name, {
+				provider: "7TV",
+				priority,
+				url: hostURL + "/" + file.name,
+				width: file.width || 28,
+				height: file.height || 28
+			});
+		}
+	}
+
+	function chooseSevenTVFile(files) {
+		const names = ["3x.webp", "2x.webp", "1x.webp", "3x.avif", "2x.avif", "1x.avif", "3x.gif", "2x.gif", "1x.gif", "4x.webp", "4x.avif", "4x.gif"];
+		for (const name of names) {
+			const file = files.find((item) => item.name === name);
+			if (file) {
+				return file;
+			}
+		}
+		return files.find((item) => item.format === "WEBP") || files[files.length - 1];
+	}
+
+	function queueMessage(message, fromSnapshot = false) {
+		renderQueue = renderQueue
+			.then(() => addMessage(message, fromSnapshot))
+			.catch((error) => console.warn("Chat-Nachricht konnte nicht gerendert werden:", error));
+	}
+
+	async function addMessage(message, fromSnapshot = false) {
 		if (!message || !message.id || seen.has(message.id)) {
+			return;
+		}
+		await ensureEmotesFor(message);
+		if (seen.has(message.id)) {
 			return;
 		}
 		seen.add(message.id);
@@ -80,7 +296,7 @@
 
 		const text = document.createElement("div");
 		text.className = "text";
-		text.textContent = message.message || "";
+		renderMessageText(text, message);
 
 		bubble.append(meta, text);
 		item.append(bubble);
@@ -90,8 +306,94 @@
 			item.style.animation = "none";
 		}
 
-		window.setTimeout(() => hideMessage(item), config.messageTtlMs);
+		window.setTimeout(() => hideMessage(item), Number(config.messageTtlMs) || 45000);
 		trimMessages();
+	}
+
+	function renderMessageText(container, message) {
+		const text = message.message || "";
+		const chars = Array.from(text);
+		const twitchRanges = twitchEmoteRanges(message, chars);
+		let cursor = 0;
+
+		for (const range of twitchRanges) {
+			appendTextWithThirdPartyEmotes(container, chars.slice(cursor, range.start).join(""));
+			appendEmote(container, range.code, range.descriptor);
+			cursor = range.end;
+		}
+		appendTextWithThirdPartyEmotes(container, chars.slice(cursor).join(""));
+	}
+
+	function twitchEmoteRanges(message, chars) {
+		const ranges = [];
+		for (const emote of message.emotes || []) {
+			for (const position of emote.positions || []) {
+				const start = Number(position.start);
+				const end = Number(position.end) + 1;
+				if (!Number.isInteger(start) || !Number.isInteger(end) || start < 0 || end <= start || end > chars.length) {
+					continue;
+				}
+				const code = chars.slice(start, end).join("");
+				ranges.push({
+					start,
+					end,
+					code: code || emote.name || "emote",
+					descriptor: {
+						provider: "Twitch",
+						priority: 100,
+						url: "https://static-cdn.jtvnw.net/emoticons/v2/" + encodeURIComponent(emote.id) + "/default/dark/3.0",
+						width: 28,
+						height: 28
+					}
+				});
+			}
+		}
+
+		ranges.sort((left, right) => left.start - right.start || right.end - left.end);
+		const clean = [];
+		let cursor = 0;
+		for (const range of ranges) {
+			if (range.start < cursor) {
+				continue;
+			}
+			clean.push(range);
+			cursor = range.end;
+		}
+		return clean;
+	}
+
+	function appendTextWithThirdPartyEmotes(container, text) {
+		if (!text) {
+			return;
+		}
+		const parts = text.match(/\s+|\S+/gu) || [];
+		for (const part of parts) {
+			const emote = /^\s+$/u.test(part) ? null : emotesByCode.get(part);
+			if (emote) {
+				appendEmote(container, part, emote);
+			} else {
+				container.append(document.createTextNode(part));
+			}
+		}
+	}
+
+	function appendEmote(container, code, descriptor) {
+		const image = document.createElement("img");
+		image.className = "emote emote-" + descriptor.provider.toLowerCase();
+		image.src = descriptor.url;
+		image.alt = code;
+		image.title = code;
+		image.decoding = "async";
+		image.loading = "lazy";
+		image.referrerPolicy = "no-referrer";
+		if (descriptor.width && descriptor.height) {
+			image.width = descriptor.width;
+			image.height = descriptor.height;
+		}
+		image.addEventListener("error", () => {
+			image.replaceWith(document.createTextNode(code));
+		}, { once: true });
+		container.append(image);
 	}
 
 	function hideMessage(item) {
@@ -116,12 +418,12 @@
 		source.addEventListener("snapshot", (event) => {
 			const messages = JSON.parse(event.data);
 			for (const message of messages) {
-				addMessage(message, true);
+				queueMessage(message, true);
 			}
 		});
 
 		source.addEventListener("message", (event) => {
-			addMessage(JSON.parse(event.data));
+			queueMessage(JSON.parse(event.data));
 		});
 	}
 

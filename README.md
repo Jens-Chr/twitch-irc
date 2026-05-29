@@ -76,6 +76,8 @@ http://localhost:2112/overlay/chat
 
 Das Overlay nutzt Server-Sent Events unter `/overlay/chat/events`, zeigt beim Laden noch aktive Nachrichten erneut an und blendet sie nach `overlay.message_ttl` aus. Nachrichten aus dem n8n-Rueckkanal erscheinen mit einem kleinen `Bot`-Hinweis.
 
+Twitch-Emotes werden aus den IRC-Emote-Ranges gerendert. Zusaetzlich laedt das Overlay globale und channel-spezifische 7TV-, BTTV- und FFZ-Emotes direkt im Browser und ersetzt passende Chat-Woerter durch Bilder. Dafuer muss die OBS-Browserquelle ausgehend auf `static-cdn.jtvnw.net`, `7tv.io`, `cdn.7tv.app`, `api.betterttv.net`, `cdn.betterttv.net` und `api.frankerfacez.com` zugreifen koennen.
+
 HTML und CSS liegen getrennt unter `overlay_assets/chat.html` und `overlay_assets/chat.css`. Sie werden beim Build in das Go-Binary eingebettet.
 
 Die Route kann fuer einen spaeteren Reverse-Proxy angepasst werden:

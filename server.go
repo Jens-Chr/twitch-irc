@@ -24,7 +24,7 @@ func startHTTPServer(serverCfg ServerConfig, metricsCfg MetricsConfig, replyCfg 
 	}
 
 	if overlayCfg.Enabled && overlay != nil {
-		overlayPageHandler := overlay.handlePage(overlayCfg)
+		overlayPageHandler := overlay.handlePage(overlayCfg, defaultChannel)
 		mux.HandleFunc(overlayCfg.Path, overlayPageHandler)
 		mux.HandleFunc(overlayCfg.Path+"/", func(w http.ResponseWriter, r *http.Request) {
 			if r.URL.Path != overlayCfg.Path+"/" {

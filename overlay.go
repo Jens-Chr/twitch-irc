@@ -21,23 +21,30 @@ type chatOverlay struct {
 	nextID      uint64
 	messages    []overlayMessage
 	subscribers map[chan overlayMessage]struct{}
+	channel     string
+	channelID   string
 }
 
 type overlayMessage struct {
-	ID               string `json:"id"`
-	Direction        string `json:"direction"`
-	Channel          string `json:"channel"`
-	User             string `json:"user"`
-	Message          string `json:"message"`
-	MessageID        string `json:"messageId,omitempty"`
-	ReplyToMessageID string `json:"replyToMessageId,omitempty"`
-	Timestamp        string `json:"timestamp"`
+	ID               string             `json:"id"`
+	Direction        string             `json:"direction"`
+	Channel          string             `json:"channel"`
+	ChannelID        string             `json:"channelId,omitempty"`
+	User             string             `json:"user"`
+	UserID           string             `json:"userId,omitempty"`
+	Message          string             `json:"message"`
+	MessageID        string             `json:"messageId,omitempty"`
+	Emotes           []chatMessageEmote `json:"emotes,omitempty"`
+	ReplyToMessageID string             `json:"replyToMessageId,omitempty"`
+	Timestamp        string             `json:"timestamp"`
 	createdAt        time.Time
 }
 
 type overlayPageConfig struct {
-	MaxMessages  int   `json:"maxMessages"`
-	MessageTTLMs int64 `json:"messageTtlMs"`
+	MaxMessages  int    `json:"maxMessages"`
+	MessageTTLMs int64  `json:"messageTtlMs"`
+	Channel      string `json:"channel,omitempty"`
+	ChannelID    string `json:"channelId,omitempty"`
 }
 
 func newChatOverlay(cfg OverlayConfig) *chatOverlay {
@@ -64,18 +71,35 @@ func (o *chatOverlay) LogChatMessage(entry chatMessageLog) {
 	}
 
 	now := o.now().UTC()
+	channel := strings.TrimPrefix(strings.TrimSpace(entry.Channel), "#")
+	channelID := strings.TrimSpace(entry.ChannelID)
 
 	o.mu.Lock()
 	o.pruneExpiredLocked(now)
+	if channel != "" {
+		o.channel = channel
+	}
+	if channelID != "" {
+		o.channelID = channelID
+	} else {
+		channelID = o.channelID
+	}
+	messageChannel := entry.Channel
+	if strings.TrimSpace(messageChannel) == "" {
+		messageChannel = o.channel
+	}
 	o.nextID++
 	message := overlayMessage{
 		ID:               fmt.Sprintf("%d", o.nextID),
 		Direction:        entry.Direction,
-		Channel:          entry.Channel,
+		Channel:          messageChannel,
+		ChannelID:        channelID,
 		User:             entry.User,
+		UserID:           entry.UserID,
 		Message:          entry.Message,
 		MessageID:        entry.MessageID,
 		ReplyToMessageID: entry.ReplyToMessageID,
+		Emotes:           entry.Emotes,
 		Timestamp:        now.Format(time.RFC3339Nano),
 		createdAt:        now,
 	}
@@ -99,22 +123,8 @@ func (o *chatOverlay) LogChatMessage(entry chatMessageLog) {
 	}
 }
 
-func (o *chatOverlay) handlePage(cfg OverlayConfig) http.HandlerFunc {
-	pageConfig := overlayPageConfig{
-		MaxMessages:  cfg.MaxMessages,
-		MessageTTLMs: cfg.messageTTLDuration().Milliseconds(),
-	}
-	configJSON, err := json.Marshal(pageConfig)
-	if err != nil {
-		log.Printf("Overlay-Konfiguration konnte nicht serialisiert werden: %v", err)
-		configJSON = []byte(`{"maxMessages":60,"messageTtlMs":45000}`)
-	}
-
-	data := struct {
-		ConfigJSON template.JS
-	}{
-		ConfigJSON: template.JS(configJSON),
-	}
+func (o *chatOverlay) handlePage(cfg OverlayConfig, channel string) http.HandlerFunc {
+	channel = strings.TrimPrefix(strings.TrimSpace(channel), "#")
 
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet && r.Method != http.MethodHead {
@@ -131,6 +141,30 @@ func (o *chatOverlay) handlePage(cfg OverlayConfig) http.HandlerFunc {
 		if assetName != "" {
 			http.NotFound(w, r)
 			return
+		}
+
+		pageConfig := overlayPageConfig{
+			MaxMessages:  cfg.MaxMessages,
+			MessageTTLMs: cfg.messageTTLDuration().Milliseconds(),
+			Channel:      channel,
+		}
+		currentChannel, currentChannelID := o.channelContext()
+		if currentChannel != "" {
+			pageConfig.Channel = currentChannel
+		}
+		if currentChannelID != "" {
+			pageConfig.ChannelID = currentChannelID
+		}
+		configJSON, err := json.Marshal(pageConfig)
+		if err != nil {
+			log.Printf("Overlay-Konfiguration konnte nicht serialisiert werden: %v", err)
+			configJSON = []byte(`{"maxMessages":60,"messageTtlMs":45000}`)
+		}
+
+		data := struct {
+			ConfigJSON template.JS
+		}{
+			ConfigJSON: template.JS(configJSON),
 		}
 
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
@@ -188,6 +222,32 @@ func (o *chatOverlay) handleEvents() http.HandlerFunc {
 			}
 		}
 	}
+}
+
+func (o *chatOverlay) SetChannelContext(channel, channelID string) {
+	if o == nil {
+		return
+	}
+	channel = strings.TrimPrefix(strings.TrimSpace(channel), "#")
+	channelID = strings.TrimSpace(channelID)
+	if channel == "" && channelID == "" {
+		return
+	}
+
+	o.mu.Lock()
+	if channel != "" {
+		o.channel = channel
+	}
+	if channelID != "" {
+		o.channelID = channelID
+	}
+	o.mu.Unlock()
+}
+
+func (o *chatOverlay) channelContext() (string, string) {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	return o.channel, o.channelID
 }
 
 func (o *chatOverlay) snapshot() []overlayMessage {

@@ -61,7 +61,14 @@ func TestChatOverlayEventsStreamsSnapshotAndMessages(t *testing.T) {
 	overlay.now = func() time.Time {
 		return time.Unix(123, 0)
 	}
-	overlay.LogChatMessage(chatMessageLog{Direction: chatMessageDirectionReceived, Channel: "test", User: "alice", Message: "Hallo"})
+	overlay.LogChatMessage(chatMessageLog{Direction: chatMessageDirectionReceived, Channel: "test", ChannelID: "42", User: "alice", UserID: "7", Message: "Hallo", Emotes: []chatMessageEmote{{
+		ID:   "25",
+		Name: "Kappa",
+		Positions: []chatMessageEmotePosition{{
+			Start: 0,
+			End:   4,
+		}},
+	}}})
 
 	server := httptest.NewServer(overlay.handleEvents())
 	defer server.Close()
@@ -102,6 +109,9 @@ func TestChatOverlayEventsStreamsSnapshotAndMessages(t *testing.T) {
 	if len(snapshot) != 1 || snapshot[0].User != "alice" || snapshot[0].Message != "Hallo" {
 		t.Fatalf("unexpected snapshot: %+v", snapshot)
 	}
+	if snapshot[0].ChannelID != "42" || snapshot[0].UserID != "7" || len(snapshot[0].Emotes) != 1 || snapshot[0].Emotes[0].ID != "25" {
+		t.Fatalf("snapshot did not include emote metadata: %+v", snapshot[0])
+	}
 
 	overlay.LogChatMessage(chatMessageLog{Direction: chatMessageDirectionSent, Channel: "test", User: "bot", Message: "Antwort"})
 
@@ -123,7 +133,7 @@ func TestChatOverlayPageUsesRelativeEventPath(t *testing.T) {
 	handler := overlay.handlePage(OverlayConfig{
 		MaxMessages: 10,
 		MessageTTL:  "30s",
-	})
+	}, "config-channel")
 
 	req := httptest.NewRequest(http.MethodGet, "/proxy/twitch-chat", nil)
 	rr := httptest.NewRecorder()
@@ -146,6 +156,34 @@ func TestChatOverlayPageUsesRelativeEventPath(t *testing.T) {
 	if !strings.Contains(body, `"messageTtlMs":30000`) {
 		t.Fatalf("overlay page does not include the configured message ttl: %s", body)
 	}
+	if !strings.Contains(body, `"channel":"config-channel"`) {
+		t.Fatalf("overlay page does not include the configured channel: %s", body)
+	}
+	if !strings.Contains(body, "loadSevenTVGlobalEmotes") || !strings.Contains(body, "https://api.betterttv.net/3/cached/emotes/global") || !strings.Contains(body, "https://api.frankerfacez.com/v1/set/global") {
+		t.Fatalf("overlay page does not include third-party emote loading")
+	}
+}
+
+func TestChatOverlayPageIncludesKnownChannelContext(t *testing.T) {
+	overlay := newChatOverlay(OverlayConfig{MaxMessages: 10})
+	overlay.SetChannelContext("live-channel", "12345")
+	handler := overlay.handlePage(OverlayConfig{
+		MaxMessages: 10,
+		MessageTTL:  "30s",
+	}, "config-channel")
+
+	req := httptest.NewRequest(http.MethodGet, "/proxy/twitch-chat", nil)
+	rr := httptest.NewRecorder()
+
+	handler.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, rr.Code)
+	}
+	body := rr.Body.String()
+	if !strings.Contains(body, `"channel":"live-channel"`) || !strings.Contains(body, `"channelId":"12345"`) {
+		t.Fatalf("overlay page does not include known channel context: %s", body)
+	}
 }
 
 func TestChatOverlayPageServesStylesheetAsset(t *testing.T) {
@@ -153,7 +191,7 @@ func TestChatOverlayPageServesStylesheetAsset(t *testing.T) {
 	handler := overlay.handlePage(OverlayConfig{
 		MaxMessages: 10,
 		MessageTTL:  "30s",
-	})
+	}, "config-channel")
 
 	req := httptest.NewRequest(http.MethodGet, "/proxy/twitch-chat?asset=chat.css", nil)
 	rr := httptest.NewRecorder()

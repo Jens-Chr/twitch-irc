@@ -23,10 +23,24 @@ type multiChatMessageLogger []chatMessageLogger
 type chatMessageLog struct {
 	Direction        string
 	Channel          string
+	ChannelID        string
 	User             string
+	UserID           string
 	Message          string
 	MessageID        string
 	ReplyToMessageID string
+	Emotes           []chatMessageEmote
+}
+
+type chatMessageEmote struct {
+	ID        string                     `json:"id"`
+	Name      string                     `json:"name,omitempty"`
+	Positions []chatMessageEmotePosition `json:"positions,omitempty"`
+}
+
+type chatMessageEmotePosition struct {
+	Start int `json:"start"`
+	End   int `json:"end"`
 }
 
 func (l multiChatMessageLogger) LogChatMessage(entry chatMessageLog) {
@@ -127,6 +141,12 @@ func lokiLinePayload(entry chatMessageLog) map[string]string {
 
 	if entry.User != "" {
 		payload["user"] = entry.User
+	}
+	if entry.UserID != "" {
+		payload["user_id"] = entry.UserID
+	}
+	if entry.ChannelID != "" {
+		payload["channel_id"] = entry.ChannelID
 	}
 	if entry.MessageID != "" {
 		payload["message_id"] = entry.MessageID

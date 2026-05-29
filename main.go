@@ -51,6 +51,12 @@ func main() {
 	prometheus.MustRegister(chatMessages)
 	startHTTPServer(cfg.Server, cfg.Metrics, cfg.Reply, cfg.Overlay, twitchClient, cfg.Twitch.Channel, cfg.Twitch.Username, chatLogger, overlay)
 
+	if overlay != nil {
+		twitchClient.OnRoomStateMessage(func(message twitch.RoomStateMessage) {
+			overlay.SetChannelContext(message.Channel, message.RoomID)
+		})
+	}
+
 	twitchClient.OnPrivateMessage(func(message twitch.PrivateMessage) {
 		fmt.Printf("[%s]: %s\n", message.User.DisplayName, message.Message)
 
@@ -58,9 +64,12 @@ func main() {
 		chatLogger.LogChatMessage(chatMessageLog{
 			Direction: chatMessageDirectionReceived,
 			Channel:   message.Channel,
+			ChannelID: message.RoomID,
 			User:      message.User.DisplayName,
+			UserID:    message.User.ID,
 			Message:   message.Message,
 			MessageID: message.ID,
+			Emotes:    twitchEmotes(message.Emotes),
 		})
 		sendToN8N(n8nClient, cfg.N8N.URL, message)
 	})
@@ -71,6 +80,32 @@ func main() {
 	if err := twitchClient.Connect(); err != nil {
 		log.Fatal(err)
 	}
+}
+
+func twitchEmotes(emotes []*twitch.Emote) []chatMessageEmote {
+	if len(emotes) == 0 {
+		return nil
+	}
+
+	converted := make([]chatMessageEmote, 0, len(emotes))
+	for _, emote := range emotes {
+		if emote == nil || emote.ID == "" {
+			continue
+		}
+		positions := make([]chatMessageEmotePosition, 0, len(emote.Positions))
+		for _, position := range emote.Positions {
+			positions = append(positions, chatMessageEmotePosition{
+				Start: position.Start,
+				End:   position.End,
+			})
+		}
+		converted = append(converted, chatMessageEmote{
+			ID:        emote.ID,
+			Name:      emote.Name,
+			Positions: positions,
+		})
+	}
+	return converted
 }
 
 func sendToN8N(client *http.Client, webhookURL string, msg twitch.PrivateMessage) {
